@@ -1,0 +1,74 @@
+{{- if .Values.ecrRefresh.enabled }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ecr-registry-refresh
+  labels:
+    {{- include "membership.labels" . | nindent 4 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ecr-registry-refresh
+  labels:
+    {{- include "membership.labels" . | nindent 4 }}
+rules:
+  # "create" can't be scoped by resourceNames (the object doesn't exist yet on first
+  # run) -- get/update/patch/delete are scoped to exactly the one secret this refreshes.
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["create"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: [{{ .Values.ecrRefresh.secretName | quote }}]
+    verbs: ["get", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ecr-registry-refresh
+  labels:
+    {{- include "membership.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: ecr-registry-refresh
+subjects:
+  - kind: ServiceAccount
+    name: ecr-registry-refresh
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: ecr-registry-refresh
+  labels:
+    {{- include "membership.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.ecrRefresh.schedule | quote }}
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: ecr-registry-refresh
+          restartPolicy: OnFailure
+          containers:
+            - name: refresh
+              image: amazon/aws-cli:2.17.0
+              # kubectl isn't in the aws-cli image -- fetched at runtime (matches the
+              # node's arm64/Graviton architecture). Occasional cronjob, so the extra
+              # download latency each run is an acceptable tradeoff against maintaining
+              # a custom image just for this.
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -e
+                  KUBECTL_VERSION=$(curl -L -s https://dl.k8s.io/release/stable.txt)
+                  curl -L -s -o /usr/local/bin/kubectl "https://dl.k8s.io/release/$KUBECTL_VERSION/bin/linux/arm64/kubectl"
+                  chmod +x /usr/local/bin/kubectl
+                  kubectl create secret docker-registry {{ .Values.ecrRefresh.secretName }} \
+                    --docker-server={{ .Values.ecrRefresh.registry }} \
+                    --docker-username=AWS \
+                    --docker-password=$(aws ecr get-login-password --region {{ .Values.ecrRefresh.region }}) \
+                    -n {{ .Release.Namespace }} --dry-run=client -o yaml | kubectl apply -f -
+{{- end }}

@@ -1,0 +1,25 @@
+spring:
+  jpa:
+    # Prod never auto-migrates the schema — only validates it matches the entities.
+    # Schema changes must be applied deliberately, via schema.sql (see below), not by
+    # Hibernate.
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+  sql:
+    init:
+      # Off by default for real (non-embedded) databases -- must opt in explicitly, or
+      # schema.sql is silently never run against Postgres. Runs before Hibernate's
+      # ddl-auto=validate check (spring.jpa.defer-datasource-initialization defaults to
+      # false), so schema.sql creating the tables is what lets validate then pass.
+      mode: always
+
+logging:
+  level:
+    com.senthil.membership: INFO
+    org.hibernate.SQL: WARN
+
+management:
+  endpoint:
+    health:
+      show-details: never

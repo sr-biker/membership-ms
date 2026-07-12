@@ -1,0 +1,83 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "membership.name" . }}
+  labels:
+    {{- include "membership.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "membership.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "membership.labels" . | nindent 8 }}
+    spec:
+      {{- if .Values.image.pullSecretName }}
+      imagePullSecrets:
+        - name: {{ .Values.image.pullSecretName }}
+      {{- end }}
+      containers:
+        - name: app
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- if .Values.dbSecretFetch.enabled }}
+          # No k8s Secret at all in this mode -- no IRSA/EKS Pod Identity exists on this
+          # self-managed cluster (which rules out the official Secrets Store CSI driver's
+          # AWS provider entirely; it hard-requires one of those two), so the container's
+          # own entrypoint fetches DB_USERNAME/DB_PASSWORD from Secrets Manager itself,
+          # using the node's instance-profile credentials, before exec'ing the app.
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -e
+              CREDS=$(aws secretsmanager get-secret-value --secret-id "$DB_SECRET_NAME" --region "$DB_SECRET_REGION" --query SecretString --output text)
+              export DB_USERNAME=$(echo "$CREDS" | jq -r .username)
+              export DB_PASSWORD=$(echo "$CREDS" | jq -r .password)
+              exec java -jar app.jar
+          {{- end }}
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: {{ .Values.springProfile | quote }}
+            # host/port/name are never secret -- set individually rather than via a Secret.
+            - name: DB_HOST
+              value: {{ .Values.db.host | quote }}
+            - name: DB_PORT
+              value: {{ .Values.db.port | quote }}
+            - name: DB_NAME
+              value: {{ .Values.db.name | quote }}
+            {{- if .Values.dbSecretFetch.enabled }}
+            - name: DB_SECRET_NAME
+              value: {{ .Values.dbSecretFetch.secretName | quote }}
+            - name: DB_SECRET_REGION
+              value: {{ .Values.dbSecretFetch.region | quote }}
+            {{- end }}
+          {{- if not .Values.dbSecretFetch.enabled }}
+          envFrom:
+            - secretRef:
+                name: {{ include "membership.secretName" . }}
+          {{- end }}
+          # Liveness only checks the in-process livenessState — never Postgres — so a DB
+          # outage doesn't cause Kubernetes to kill and restart otherwise-healthy pods.
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.probes.liveness.path }}
+              port: http
+            initialDelaySeconds: {{ .Values.probes.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.liveness.periodSeconds }}
+            failureThreshold: {{ .Values.probes.liveness.failureThreshold }}
+          # Readiness includes the DB check — pod stops receiving traffic (removed from the
+          # Service's endpoints) while Postgres is unreachable, without being restarted.
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.probes.readiness.path }}
+              port: http
+            initialDelaySeconds: {{ .Values.probes.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
+            failureThreshold: {{ .Values.probes.readiness.failureThreshold }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}

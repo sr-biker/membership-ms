@@ -1,0 +1,63 @@
+replicaCount: 2
+
+image:
+  # TODO: point at the real ECR repo once one exists for membership (see
+  # modules/k8s-nodes' aws_ecr_repository in the infra repo for the contacts-micro-service
+  # pattern to replicate) -- placeholder until that's provisioned.
+  repository: <account-id>.dkr.ecr.us-east-1.amazonaws.com/membership
+  tag: latest
+  pullPolicy: IfNotPresent
+  # Refreshed periodically by a CronJob (templates/ecr-registry-refresh-cronjob.yaml) --
+  # ECR auth tokens expire after ~12h.
+  pullSecretName: ecr-registry
+
+environment: prod
+springProfile: prod
+
+ingress:
+  enabled: true
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 384Mi
+  limits:
+    # "1" not "1000m" -- the API server canonicalizes whole-number millicores to "1" on
+    # write, so "1000m" here would make Argo CD's diff perpetually see this field as
+    # OutOfSync (live value never matches the literal desired string).
+    cpu: "1"
+    memory: 768Mi
+
+probes:
+  liveness:
+    path: /actuator/health/liveness
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    failureThreshold: 3
+  readiness:
+    path: /actuator/health/readiness
+    initialDelaySeconds: 15
+    periodSeconds: 5
+    failureThreshold: 3
+
+# host/port/name are plain (never secret); username/password are fetched at container
+# startup (dbSecretFetch below), not via a k8s Secret at all.
+# TODO: point at the real RDS endpoint/db name once provisioned for this service (or
+# shared with contacts-micro-service's infra-prod-rds-postgres instance, if reused).
+db:
+  host: <rds-endpoint>
+  port: "5432"
+  name: membership
+
+ecrRefresh:
+  enabled: true
+  region: us-east-1
+  registry: <account-id>.dkr.ecr.us-east-1.amazonaws.com
+  secretName: ecr-registry
+
+dbSecretFetch:
+  enabled: true
+  # Secrets Manager secret name (not ARN) -- must match a node IAM policy scoped to it
+  # (see modules/k8s-nodes' db_secret_read policy pattern in the infra repo).
+  secretName: /rds/postgres/credentials
+  region: us-east-1

@@ -1,0 +1,30 @@
+replicaCount: 2
+
+image:
+  repository: membership-app
+  tag: latest
+  pullPolicy: IfNotPresent
+
+environment: local
+springProfile: local
+
+ingress:
+  enabled: true
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+# Plain-text creds are fine for the local kind cluster; matches docker-compose.yml in
+# membership. Point this at a Postgres reachable from inside kind (e.g. a postgres
+# Deployment/Service in the same namespace, or host.docker.internal).
+db:
+  host: postgres
+  port: "5432"
+  name: membership
+  username: membership
+  password: membership

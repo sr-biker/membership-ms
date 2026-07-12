@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "membership.name" . }}
+  labels:
+    {{- include "membership.labels" . | nindent 4 }}
+spec:
+  selector:
+    {{- include "membership.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: http
+      # Not environment-dependent (never overridden in values-local.yaml/values-prod.yaml),
+      # so it's inlined here rather than parameterized via values.
+      port: 8080
+      targetPort: http

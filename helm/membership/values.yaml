@@ -1,0 +1,91 @@
+replicaCount: 2
+
+image:
+  repository: membership
+  tag: latest
+  pullPolicy: IfNotPresent
+  # imagePullSecrets entry -- needed for ECR since kubelet has no built-in ECR credential
+  # provider configured on this self-managed cluster (no EKS-optimized AMI, no
+  # ecr-credential-provider plugin installed). Unset for local (kind loads images
+  # directly, no pull needed).
+  pullSecretName: ""
+
+# Used as the "environment" label on every k8s object this chart creates (metadata only —
+# never in selector.matchLabels, which stay stable via selectorLabels in _helpers.tpl).
+environment: local
+
+# Spring profile to activate — local or prod (see application-local.yml / application-prod.yml
+# in the membership repo).
+springProfile: local
+
+# Routes through an in-cluster ingress controller listening on NodePort 30080 (see
+# modules/alb's ingress_node_port and local/kind-config.yaml) — the same NodePort a
+# prod ALB target group forwards to. No host/path routing needed since this is currently
+# the only workload in the cluster; catch-all on "/".
+ingress:
+  enabled: false
+  className: nginx
+  host: ""
+  path: /
+  pathType: Prefix
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+probes:
+  liveness:
+    path: /actuator/health/liveness
+    initialDelaySeconds: 20
+    periodSeconds: 10
+    failureThreshold: 3
+  readiness:
+    path: /actuator/health/readiness
+    initialDelaySeconds: 10
+    periodSeconds: 5
+    failureThreshold: 3
+
+# host/port/name are never secret -- always plain values, set individually as env vars
+# regardless of where username/password come from. Fine for local (values-local.yaml) as-is;
+# prod (values-prod.yaml) points these at the real RDS endpoint.
+db:
+  host: ""
+  port: "5432"
+  name: ""
+  username: ""
+  password: ""
+  # Name of a pre-existing Kubernetes Secret with DB_USERNAME/DB_PASSWORD keys. Used via
+  # envFrom instead of the plain db.username/db.password values above, when set. Ignored
+  # entirely when dbSecretFetch.enabled (see below) -- that path doesn't use a k8s Secret
+  # at all.
+  existingSecret: ""
+
+# Refreshes the imagePullSecret named image.pullSecretName periodically -- ECR auth
+# tokens expire after ~12h, so a one-time-created Secret goes stale. Off by default
+# (local doesn't pull from ECR at all); prod turns it on.
+ecrRefresh:
+  enabled: false
+  schedule: "0 */6 * * *"
+  region: us-east-1
+  # Registry host to authenticate against, e.g. <account>.dkr.ecr.<region>.amazonaws.com
+  # -- not the full repository path, just the host portion.
+  registry: ""
+  secretName: ecr-registry
+
+# Command-override credential fetch: the container's own entrypoint calls
+# `aws secretsmanager get-secret-value` (using the node's instance-profile credentials --
+# no IRSA/EKS Pod Identity exists on this self-managed cluster, which rules out the
+# official Secrets Store CSI driver's AWS provider entirely; it hard-requires one of those
+# two) and exports DB_USERNAME/DB_PASSWORD before exec'ing the app. Off by default (local
+# uses a plain k8s Secret via templates/secret.yaml instead); prod turns it on. Requires
+# aws-cli + jq in the image (see Dockerfile) and node IAM permission scoped to secretName
+# (modules/k8s-nodes' db_secret_read policy in the infra repo).
+dbSecretFetch:
+  enabled: false
+  # Secrets Manager secret name (not ARN) holding {"username": "...", "password": "..."}.
+  secretName: ""
+  region: us-east-1
