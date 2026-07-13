@@ -63,3 +63,9 @@ dbSecretFetch:
   # (see modules/k8s-nodes' db_secret_read policy pattern in the infra repo).
   secretName: /rds/postgres/credentials
   region: us-east-1
+
+# Same Keycloak Service DNS as local -- senthil-auth namespace, both clusters run the same
+# chart (see infra's helm/keycloak).
+security:
+  enabled: true
+  issuerUri: http://keycloak.senthil-auth.svc.cluster.local:8080/realms/apps

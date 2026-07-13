@@ -89,3 +89,12 @@ dbSecretFetch:
   # Secrets Manager secret name (not ARN) holding {"username": "...", "password": "..."}.
   secretName: ""
   region: us-east-1
+
+# Off by default -- no Keycloak reachable from local docker-compose. When enabled, write
+# endpoints (POST/PUT/DELETE on /api/**) require a valid JWT bearer token issued by
+# issuerUri's realm; GET and /actuator/** stay open regardless (health probes hit
+# /actuator/** without a token). kind/prod turn this on, pointing at the in-cluster
+# Keycloak Service (see helm/keycloak in the infra repo).
+security:
+  enabled: false
+  issuerUri: ""

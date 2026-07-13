@@ -31,3 +31,9 @@ db:
   name: membership
   username: membership
   password: membership
+
+# Keycloak runs in senthil-auth in the same kind cluster (see infra's local/README.md) --
+# cross-namespace Service DNS works fine (namespaces aren't a network boundary).
+security:
+  enabled: true
+  issuerUri: http://keycloak.senthil-auth.svc.cluster.local:8080/realms/apps

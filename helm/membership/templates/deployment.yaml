@@ -56,6 +56,16 @@ spec:
             - name: DB_SECRET_REGION
               value: {{ .Values.dbSecretFetch.region | quote }}
             {{- end }}
+            # APP_SECURITY_ENABLED/APP_SECURITY_ISSUER_URI -- relaxed-binding env var names
+            # for the app.security.enabled/app.security.issuer-uri properties SecurityConfig
+            # reads. Deliberately not spring.security.oauth2.resourceserver.* (see
+            # SecurityConfig's comment on why that would break docker-compose/tests).
+            - name: APP_SECURITY_ENABLED
+              value: {{ .Values.security.enabled | quote }}
+            {{- if .Values.security.enabled }}
+            - name: APP_SECURITY_ISSUER_URI
+              value: {{ .Values.security.issuerUri | quote }}
+            {{- end }}
           {{- if not .Values.dbSecretFetch.enabled }}
           envFrom:
             - secretRef:
