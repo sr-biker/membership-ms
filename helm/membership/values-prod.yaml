@@ -2,7 +2,7 @@ replicaCount: 2
 
 image:
   repository: 605448157849.dkr.ecr.us-east-1.amazonaws.com/membership
-  tag: c9cba1c8
+  tag: d0fd618d
   pullPolicy: IfNotPresent
   # Refreshed periodically by a CronJob (templates/ecr-registry-refresh-cronjob.yaml) --
   # ECR auth tokens expire after ~12h.
