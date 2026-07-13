@@ -1,6 +1,7 @@
 package com.senthil.membership.controller;
 
 import com.senthil.membership.model.Membership;
+import com.senthil.membership.model.Schedule;
 import com.senthil.membership.repository.MembershipRepository;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -35,7 +36,14 @@ public class MembershipController {
     @ResponseStatus(HttpStatus.CREATED)
     public Membership create(@Valid @RequestBody Membership membership) {
         membership.setId(null);
-        membership.setSchedules(membership.getSchedules());
+        // Jackson's @JsonManagedReference/@JsonBackReference already linked each
+        // Schedule.membership back to this instance during deserialization -- no need to
+        // re-set it here (doing so via setSchedules(getSchedules()) previously aliased
+        // the same list instance and silently wiped it: clear() emptied the very list
+        // the for-loop was about to iterate).
+        for (Schedule schedule : membership.getSchedules()) {
+            schedule.setMembership(membership);
+        }
         return membershipRepository.save(membership);
     }
 
@@ -45,7 +53,9 @@ public class MembershipController {
             return ResponseEntity.notFound().build();
         }
         membership.setId(id);
-        membership.setSchedules(membership.getSchedules());
+        for (Schedule schedule : membership.getSchedules()) {
+            schedule.setMembership(membership);
+        }
         return ResponseEntity.ok(membershipRepository.save(membership));
     }
 

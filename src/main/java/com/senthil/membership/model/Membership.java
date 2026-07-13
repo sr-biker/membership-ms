@@ -27,7 +27,12 @@ public class Membership {
     @Enumerated(EnumType.STRING)
     private ClassType classType;
 
-    @OneToMany(mappedBy = "membership", cascade = CascadeType.ALL, orphanRemoval = true)
+    // EAGER, not the JPA default LAZY -- open-in-view is deliberately false (see
+    // application.yml), and a REST controller returning entities directly means Jackson
+    // serializes the response after the transaction (and Hibernate session) has already
+    // closed. A lazy collection would throw LazyInitializationException on every read
+    // that didn't just create the entity in the same request.
+    @OneToMany(mappedBy = "membership", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
     @JsonManagedReference
     private List<Schedule> schedules = new ArrayList<>();
 
