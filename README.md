@@ -19,14 +19,23 @@ for the sibling app this one was scaffolded to mirror structurally.
   separate RDS instance. Created once, by hand, via `psql` over SSM (no migration tool yet — see
   `schema.sql`, which is the one deliberate exception to `ddl-auto: validate` in prod).
 - **Image**: built (arm64, matching the cluster's Graviton nodes) and pushed to the `infra`-provisioned
-  ECR repo `membership`. No CI pipeline yet (unlike `contacts-micro-service`'s `prod/cicd`) — images
-  are built and pushed by hand; add one if this app starts changing often.
+  ECR repo `membership`. `infra`'s `membership-pipeline` CodePipeline (`Source` → `Build` only — no
+  Deploy stage, since Argo CD owns that; see `infra`'s README) builds this repo and publishes to ECR
+  on push. Bumping this repo's own `values-prod.yaml` `image.tag` and pushing is what actually
+  changes the deployed version — the pipeline building a new image doesn't do that by itself.
 - **Credentials**: same command-override pattern as `contacts-micro-service` — no Kubernetes Secret,
   no CSI driver (no IRSA/EKS Pod Identity on this self-managed cluster). The container's own entrypoint
   fetches `DB_USERNAME`/`DB_PASSWORD` from the shared `/rds/postgres/credentials` Secrets Manager
   secret at startup, using the node's instance-profile credentials.
 - **Image pulls**: via `imagePullSecrets`, refreshed every 6h by an in-cluster CronJob (same gap as
   `contacts-micro-service`: no `ecr-credential-provider` on kubelet).
+- **Auth**: write endpoints (`POST`/`PUT`/`DELETE` on `/api/memberships`) require a valid JWT issued by
+  Keycloak (`infra`'s `helm/keycloak`, realm `apps`); `GET` and `/actuator/**` stay open regardless
+  (k8s health probes hit `/actuator/**` without a token). See `src/main/java/com/senthil/membership/config/SecurityConfig.java`
+  — enforcement is entirely driven by whether `spring.security.oauth2.resourceserver.jwt.issuer-uri`
+  is set (unset in local `docker-compose`, so nothing's enforced there; set via Helm values in
+  `kind`/prod). The autoconfigured `JwtDecoder` is lazy (`SupplierJwtDecoder`), so an unreachable
+  Keycloak doesn't crash the app at startup — confirmed directly, not assumed.
 
 ## Data model
 
