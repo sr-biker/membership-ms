@@ -1,11 +1,8 @@
 replicaCount: 2
 
 image:
-  # TODO: point at the real ECR repo once one exists for membership (see
-  # modules/k8s-nodes' aws_ecr_repository in the infra repo for the contacts-micro-service
-  # pattern to replicate) -- placeholder until that's provisioned.
-  repository: <account-id>.dkr.ecr.us-east-1.amazonaws.com/membership
-  tag: latest
+  repository: 605448157849.dkr.ecr.us-east-1.amazonaws.com/membership
+  tag: 7ed9707d
   pullPolicy: IfNotPresent
   # Refreshed periodically by a CronJob (templates/ecr-registry-refresh-cronjob.yaml) --
   # ECR auth tokens expire after ~12h.
@@ -16,6 +13,10 @@ springProfile: prod
 
 ingress:
   enabled: true
+  # Path-scoped rather than catch-all "/" -- contacts-micro-service already owns "/" on
+  # the shared ingress controller/host. This matches the app's own controller mapping
+  # (/api/memberships), so no rewrite-target annotation is needed.
+  path: /api/memberships
 
 resources:
   requests:
@@ -41,18 +42,19 @@ probes:
     failureThreshold: 3
 
 # host/port/name are plain (never secret); username/password are fetched at container
-# startup (dbSecretFetch below), not via a k8s Secret at all.
-# TODO: point at the real RDS endpoint/db name once provisioned for this service (or
-# shared with contacts-micro-service's infra-prod-rds-postgres instance, if reused).
+# startup (dbSecretFetch below), not via a k8s Secret at all. Reuses
+# contacts-micro-service's RDS instance (infra-prod-rds-postgres) -- separate database
+# on the same instance, not a separate instance -- the "membership" database must exist
+# on it before this deploys (see the one-time psql step run over SSM).
 db:
-  host: <rds-endpoint>
+  host: infra-prod-rds-postgres.cmx2qymsqgue.us-east-1.rds.amazonaws.com
   port: "5432"
   name: membership
 
 ecrRefresh:
   enabled: true
   region: us-east-1
-  registry: <account-id>.dkr.ecr.us-east-1.amazonaws.com
+  registry: 605448157849.dkr.ecr.us-east-1.amazonaws.com
   secretName: ecr-registry
 
 dbSecretFetch:
