@@ -10,6 +10,9 @@ springProfile: local
 
 ingress:
   enabled: true
+  # Path-scoped rather than catch-all "/" -- contacts-micro-service already owns "/" on
+  # the shared local ingress controller too (same as prod).
+  path: /api/memberships
 
 resources:
   requests:
