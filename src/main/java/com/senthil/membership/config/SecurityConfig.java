@@ -1,6 +1,6 @@
 package com.senthil.membership.config;
 
-import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -8,32 +8,28 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
-import org.springframework.security.oauth2.jwt.JwtDecoders;
 import org.springframework.security.web.SecurityFilterChain;
 
 @Configuration
 public class SecurityConfig {
 
-    // Off by default -- local docker-compose has no Keycloak to validate tokens against.
-    // Explicitly enabled via SECURITY_ENABLED (kind/prod Helm values), where
-    // app.security.issuer-uri points at the in-cluster Keycloak. Deliberately its own
-    // property namespace, not spring.security.oauth2.resourceserver.* -- that would let
-    // Spring Boot's own autoconfiguration try to build a JwtDecoder (and fetch the OIDC
-    // discovery document over the network) at context startup any time the property is
-    // merely present, even with an empty value, which would break docker-compose/tests
-    // with no Keycloak reachable regardless of this flag.
-    @Value("${app.security.enabled:false}")
-    private boolean securityEnabled;
-
-    @Value("${app.security.issuer-uri:}")
-    private String issuerUri;
-
+    // Spring Boot only autoconfigures a JwtDecoder bean when
+    // spring.security.oauth2.resourceserver.jwt.issuer-uri is actually set (local
+    // docker-compose leaves it unset, so jwtDecoder is null below) -- its
+    // presence/absence *is* the enabled/disabled switch, no separate flag needed.
+    // Autoconfigured as a SupplierJwtDecoder -- issuer resolution is deferred to first
+    // token validation, not done at bean-creation time, so an unreachable Keycloak no
+    // longer crashes the app at startup the way manually calling
+    // JwtDecoders.fromIssuerLocation() did. Confirmed via docker logs
+    // (jwtDecoder=SupplierJwtDecoder@...) and a real request against an unreachable
+    // issuer-uri: app boots fine, POST/PUT/DELETE correctly 401 without a token.
     @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+    public SecurityFilterChain securityFilterChain(
+            HttpSecurity http, @Autowired(required = false) JwtDecoder jwtDecoder) throws Exception {
         http.csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS));
 
-        if (!securityEnabled) {
+        if (jwtDecoder == null) {
             http.authorizeHttpRequests(auth -> auth.anyRequest().permitAll());
             return http.build();
         }
@@ -44,14 +40,8 @@ public class SecurityConfig {
                         .requestMatchers("/actuator/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/**").permitAll()
                         .anyRequest().authenticated())
-                .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> jwt.decoder(jwtDecoder())));
+                .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> jwt.decoder(jwtDecoder)));
 
         return http.build();
-    }
-
-    // Only invoked (and only hits the network to fetch Keycloak's OIDC discovery
-    // document) when securityEnabled is true -- see the comment above.
-    private JwtDecoder jwtDecoder() {
-        return JwtDecoders.fromIssuerLocation(issuerUri);
     }
 }
