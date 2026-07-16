@@ -1,9 +1,9 @@
 FROM maven:3.9-amazoncorretto-21 AS build
 WORKDIR /build
 COPY pom.xml .
-RUN mvn -B dependency:go-offline
+RUN mvn -B -ntp dependency:go-offline
 COPY src ./src
-RUN mvn -B package -DskipTests
+RUN mvn -B -ntp package -DskipTests
 
 FROM amazoncorretto:21-alpine
 # aws-cli + jq: only actually used in prod, to fetch DB credentials at container startup
